@@ -1,0 +1,288 @@
+---
+title: "Reproducible Research-Course Project 2"
+author: "Sanket Tarafder"
+date: "22/05/2021"
+output: html_document
+---
+
+# Exploring the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database
+
+Storms and other severe weather events can cause both public health and economic problems for communities and municipalities. Many severe events can result in fatalities, injuries, and property damage, and preventing such outcomes to the extent possible is a key concern.
+
+This project involves exploring the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database. This database tracks characteristics of major storms and weather events in the United States, including when and where they occur, as well as estimates of any fatalities, injuries, and property damage.
+
+## Data
+
+The data for this assignment come in the form of a comma-separated-value file compressed via the bzip2 algorithm to reduce its size. You can download the file from the course web site:
+
+* [Storm Data](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2) [47Mb]
+
+There is also some documentation of the database available. Here you will find how some of the variables are constructed/defined.
+
+* National Weather Service [Storm Data Documentation](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf)
+
+* National Climatic Data Center Storm Events [FAQ](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2FNCDC%20Storm%20Events-FAQ%20Page.pdf)
+
+The events in the database start in the year 1950 and end in November 2011. In the earlier years of the database there are generally fewer events recorded, most likely due to a lack of good records. More recent years should be considered more complete.
+
+## Assignment
+
+The basic goal of this assignment is to explore the NOAA Storm Database and answer some basic questions about severe weather events. You must use the database to answer the questions below and show the code for your entire analysis. Your analysis can consist of tables, figures, or other summaries. You may use any R package you want to support your analysis.
+
+### Questions
+
+1. Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?
+2. Across the United States, which types of events have the greatest economic consequences?
+
+### Mandatory Imports
+
+```{r, message=FALSE}
+library(dplyr)
+library(ggplot2)
+library(ggpubr)
+```
+
+# Data Processing
+
+### Loading the Data
+
+At first the Data is loaded into R.
+```{r Data Loading, cache=TRUE}
+filename <- "StormData.csv.bz2"
+fileUrl <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+if(!file.exists(filename)) {
+  download.file(fileUrl, destfile = filename, method = "curl")
+}
+
+Storm.Data <- read.csv(filename)
+head(Storm.Data)
+```
+
+### Processing the Data
+
+The Data contains total **902297** observations and total **37** variables but we are only interested in few variables.
+
+The variables we are interested in are-
+
+* <code>EVTYPE</code>: Types of events or natural calamities or weather events, e.g., Tornado, Hurricane, Avalanche, Flood, Hail, etc.
+
+* <code>FATALITIES</code>: Number of death due to natural calamities or weather events.
+
+* <code>INJURIES</code>: Number of people injured due to the weather events.
+
+* <code>PROPDMG</code>: Damage of property due to weather events.
+
+* <code>PROPDMGEXP</code>: Units for property damage.
+
+* <code>CROPDMG</code>: Damage of crops due to weather events.
+
+* <code>CROPDMGEXP</code>: Units for crop damage.
+
+So, only these variables are selected for further analysis.
+
+```{r Selecting Columns, cache=TRUE}
+Storm.Data <- Storm.Data[, c("EVTYPE", "FATALITIES", "INJURIES", "PROPDMG", "PROPDMGEXP", "CROPDMG", "CROPDMGEXP")]
+head(Storm.Data)
+```
+
+Then, the same kind of weather events are grouped into 10 different types, i.e., Hail, Storm, Snow, Flood, Winter, Rain, Tornado, Wind, Heat and Others, in a new variable <code>EVENTS</code>.
+
+```{r Grouping, cache=TRUE}
+Storm.Data$EVENTS <- "OTHERS"
+
+Storm.Data$EVENTS[grepl("Hail", Storm.Data$EVTYPE, ignore.case = TRUE)] <- "Hail"
+Storm.Data$EVENTS[grepl("Storm", Storm.Data$EVTYPE, ignore.case = TRUE)] <- "Storm"
+Storm.Data$EVENTS[grepl("Snow", Storm.Data$EVTYPE, ignore.case = TRUE)] <- "Snow"
+Storm.Data$EVENTS[grepl("Flood", Storm.Data$EVTYPE, ignore.case = TRUE)] <- "Flood"
+Storm.Data$EVENTS[grepl("Winter", Storm.Data$EVTYPE, ignore.case = TRUE)] <- "Winter"
+Storm.Data$EVENTS[grepl("Rain", Storm.Data$EVTYPE, ignore.case = TRUE)] <- "Rain"
+Storm.Data$EVENTS[grepl("Tornado", Storm.Data$EVTYPE, ignore.case = TRUE)] <- "Tornado"
+Storm.Data$EVENTS[grepl("Wind", Storm.Data$EVTYPE, ignore.case = TRUE)] <- "Wind"
+Storm.Data$EVENTS[grepl("Heat", Storm.Data$EVTYPE, ignore.case = TRUE)] <- "Heat"
+
+table(Storm.Data$EVENTS)
+```
+
+Now explore the units of economical damage.
+
+```{r Exploring Units 1}
+sort(table(Storm.Data$PROPDMGEXP), decreasing = TRUE)
+```
+
+```{r Exploring Units 2}
+sort(table(Storm.Data$CROPDMGEXP), decreasing = TRUE)
+```
+
+There are some mess in the units so, we are going to simplify the units taking 
+
+* **H** and **h** as 10^2
+* **K** and **k** as 10^3
+* **M** and **m** as 10^6
+* **B** as 10^9
+* The others are assumed as Dollars
+
+and the units are updated in their respective places and the type is changed to numeric.
+
+```{r Updating PROPDMGEXP}
+Storm.Data$PROPDMGEXP[!grepl("K|M|B|H", Storm.Data$PROPDMGEXP, ignore.case = TRUE)] <- "0"
+Storm.Data$PROPDMGEXP[grepl("H", Storm.Data$PROPDMGEXP, ignore.case = TRUE)] <- "2"
+Storm.Data$PROPDMGEXP[grepl("K", Storm.Data$PROPDMGEXP, ignore.case = TRUE)] <- "3"
+Storm.Data$PROPDMGEXP[grepl("M", Storm.Data$PROPDMGEXP, ignore.case = TRUE)] <- "6"
+Storm.Data$PROPDMGEXP[grepl("B", Storm.Data$PROPDMGEXP, ignore.case = TRUE)] <- "9"
+
+sort(table(Storm.Data$PROPDMGEXP), decreasing = TRUE)
+```
+
+```{r Updating CROPDMGEXP}
+Storm.Data$CROPDMGEXP[!grepl("K|M|B|H", Storm.Data$CROPDMGEXP, ignore.case = TRUE)] <- "0"
+Storm.Data$CROPDMGEXP[grepl("H", Storm.Data$CROPDMGEXP, ignore.case = TRUE)] <- "2"
+Storm.Data$CROPDMGEXP[grepl("K", Storm.Data$CROPDMGEXP, ignore.case = TRUE)] <- "3"
+Storm.Data$CROPDMGEXP[grepl("M", Storm.Data$CROPDMGEXP, ignore.case = TRUE)] <- "6"
+Storm.Data$CROPDMGEXP[grepl("B", Storm.Data$CROPDMGEXP, ignore.case = TRUE)] <- "9"
+
+sort(table(Storm.Data$CROPDMGEXP), decreasing = TRUE)
+```
+
+Now we update the damage data in <code>PROPDMG</code> and <code>CROPDMG</code>.
+
+```{r Updating damage values}
+Storm.Data$PROPDMG <- Storm.Data$PROPDMG * 10 ^ as.numeric(Storm.Data$PROPDMGEXP)
+Storm.Data$CROPDMG <- Storm.Data$CROPDMG * 10 ^ as.numeric(Storm.Data$CROPDMGEXP)
+
+Storm.Data <- Storm.Data[, names(Storm.Data) != "PROPDMGEXP"]
+Storm.Data <- Storm.Data[, names(Storm.Data) != "CROPDMGEXP"]
+
+head(Storm.Data)
+```
+
+# Analysis
+
+As the data is now processed we should carry on our analysis.
+
+### Summarising according to the effect on public health
+
+We grouped the data according to the events and aggregated ta total **FATALITIES** and **INJURIES**.
+
+```{r Summarising: Public Health}
+Storm.Data.Health <- Storm.Data %>% group_by(EVENTS) %>%
+  summarise(Total.Fatalities = sum(FATALITIES), Total.Injuries = sum(INJURIES))
+
+Storm.Data.Health$Total <- Storm.Data.Health$Total.Fatalities + Storm.Data.Health$Total.Injuries
+
+Storm.Data.Health
+```
+
+### Summarising according to the effect on public economy
+
+```{r Summarising: Public Economy}
+Storm.Data.Economy <- Storm.Data %>% group_by(EVENTS) %>%
+  summarise(Total.Property.Damage = sum(PROPDMG), Total.Crop.Damage = sum(CROPDMG))
+
+Storm.Data.Economy
+```
+
+The **Total.Crop.Damage** variable the value for **OTHERS** category is much higher, almost double, than **Flood** which has the most Crop Damage value. So, we should explore which event is the reason for that.
+
+```{r Finding Answer}
+datasub <- Storm.Data
+datasub <- Storm.Data[Storm.Data$EVENTS == "OTHERS",]
+datasub <- datasub %>% group_by(EVTYPE) %>% summarise(total = sum(CROPDMG))
+datasub[order(datasub$total, decreasing = TRUE), ]
+```
+
+We can see that **Drought** causes more Crop Damage than flood that we should consider this for the Crop Damage.
+
+```{r Adding Drought in the EVENTS}
+Storm.Data$EVENTS[grepl("Drought", Storm.Data$EVTYPE, ignore.case = TRUE)] <- "Drought"
+```
+
+Now, we should recalculate and summarise the Dataset acoording to the effect of weather in the public economy.
+
+```{r Re-Summarising: Public Economy}
+Storm.Data.Economy <- Storm.Data %>% group_by(EVENTS) %>%
+  summarise(Total.Property.Damage = sum(PROPDMG), Total.Crop.Damage = sum(CROPDMG))
+
+Storm.Data.Economy$Total <- Storm.Data.Economy$Total.Crop.Damage + Storm.Data.Economy$Total.Property.Damage
+
+Storm.Data.Economy
+```
+
+
+# Results
+
+So now we can visualize the result and draw a verdict.
+
+### Across the United States, which types of events are most harmful with respect to population health?
+
+```{r Public Health Plot, fig.align='center', fig.cap="Effect of Weather Events on Public Health", fig.height=12, fig.width=14}
+Storm.Data.Health$EVENTS <- as.factor(Storm.Data.Health$EVENTS)
+
+# Plot of total
+tp <- ggplot(Storm.Data.Health, aes(EVENTS, Total)) + 
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  ylab("Total Health Issues") +
+  xlab("Event Type")
+
+# Plot of Fatalities
+fp <- ggplot(Storm.Data.Health, aes(EVENTS, Total.Fatalities)) + 
+  geom_bar(stat = "identity", fill = "orange") +
+  ylab("Total Fatalities") +
+  xlab("Event Type")
+
+# Plot of Injuries
+ip <- ggplot(Storm.Data.Health, aes(EVENTS, Total.Injuries)) + 
+  geom_bar(stat = "identity", fill = "yellow") +
+  ylab("Total Injuries") +
+  xlab("Event Type")
+
+# Arranging all the plots
+ggarrange(
+  ggarrange(
+    fp, ip, ncol = 2,
+    labels = c("Fatality Due to Weather Event", "Injury Due to Weather Event")),
+  ggarrange(tp, ncol = 1, labels = "Impact of Weather Events on Public Health"),
+  nrow = 2
+)
+```
+
+From the above figure we can conclude that **Tornado** is the most harmful event for the public health.
+
+### Across the United States, which types of events have the greatest economic consequences?
+
+```{r Public Economy Plot, fig.align='center', fig.cap="Effect of Weather Events on Public Economy", fig.height=12, fig.width=14}
+Storm.Data.Economy$EVENTS <- as.factor(Storm.Data.Economy$EVENTS)
+
+# Plot of total
+tp <- ggplot(Storm.Data.Economy, aes(EVENTS, Total)) + 
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  ylab("Total Economical Damage") +
+  xlab("Event Type")
+
+# Plot of Crop Damage
+cp <- ggplot(Storm.Data.Economy, aes(EVENTS, Total.Crop.Damage)) + 
+  geom_bar(stat = "identity", fill = "orange") +
+  ylab("Total Crop Damage") +
+  xlab("Event Type")
+
+# Plot of Property Damage
+pp <- ggplot(Storm.Data.Economy, aes(EVENTS, Total.Property.Damage)) + 
+  geom_bar(stat = "identity", fill = "yellow") +
+  ylab("Total Property Damage") +
+  xlab("Event Type")
+
+# Arranging all the plots
+ggarrange(
+  ggarrange(
+    cp, pp, ncol = 2,
+    labels = c("Crop Damage Due to Weather Event", "Property Damage Due to Weather Event")),
+  ggarrange(tp, ncol = 1, labels = "Economical Consequences Due to Weather Events"),
+  nrow = 2
+)
+```
+
+From the above figure we can conclude that the **Drought** caused more Crop Damage and **Flood** caused more Property Damage but The most devastating weather event with the greatest economic cosequences (to property and crops) is a **Flood**.
+
+
+
